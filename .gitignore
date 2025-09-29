@@ -1,82 +1,54 @@
+# CLAHE Project - Build and Output Files
+
 # Build directories
 build/
-out/
 bin/
-obj/
-Debug/
-Release/
-x64/
-
-# CMake files
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-Makefile
 *.cmake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
 
-# Compiled Object files
-*.slo
-*.lo
+# Compiled files
 *.o
 *.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
+*.a
+*.lib
 *.so
 *.dylib
 *.dll
 
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
 # Executables
+clahe_demo
+clahe_benchmark
 *.exe
 *.out
-*.app
 
-# Visual Studio files
-*.vcxproj
-*.vcxproj.filters
-*.vcxproj.user
-*.sln
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
-.vs/
+# Output images (keep test inputs, ignore outputs)
+output*.png
+output*.jpg
+*_clahe.*
+*_opencv.*
+*_modern.*
+result*.png
+result*.jpg
 
-# Qt files
-*.pro.user
-*.pro.user.*
+# Benchmark results
+*.csv
+benchmark_results.*
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# Linux
-*~
-
-# IDE files
+# IDE and editor files
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# Logs
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
 *.log
