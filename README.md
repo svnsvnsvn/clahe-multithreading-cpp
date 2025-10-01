@@ -22,16 +22,26 @@ sudo apt install cmake libopencv-dev
 ./build.sh
 ```
 
-### 3. Run
+### 3. Test It Works
 ```bash
-# Test with your image
+# Quick test with included image
 ./build/bin/clahe_demo test_input.png output.png --metrics
 
-# Compare with OpenCV's implementation
-./build/bin/clahe_demo test_input.png output.png --compare
+# Quick benchmark test (a few seconds)
+./build/bin/clahe_harness --iterations 10 --image-size 1024x1024
+```
 
-# Run benchmarks
-./build/bin/clahe_benchmark --quick
+### 4. Run Performance Benchmarks
+```bash
+# 15-second benchmark
+./build/bin/clahe_harness --iterations 266
+
+# 30-second benchmark  
+./build/bin/clahe_harness --iterations 533
+
+# Test with your own images
+./build/bin/clahe_harness --input your_image.png --iterations 50
+```
 ```
 
 ## What Changed from Original Code
@@ -46,7 +56,6 @@ sudo apt install cmake libopencv-dev
 - OpenCV 4.x `cv::Mat` instead of `IplImage*`
 - RAII memory management replaces malloc/free
 - Performance profiling support
-- Single-threaded foundation for multithreading work
 
 ## Changes Made
 
@@ -55,14 +64,15 @@ sudo apt install cmake libopencv-dev
 3. Math: Bit shifts for power-of-2 divisions where possible
 4. API: Modern C++17 error handling and RAII
 
-## Files Structure
+## Project Files
 
 ```
 src/clahe_modern.cpp    # Main implementation (single-threaded)
 include/clahe_modern.h  # Modern API header
-src/demo.cpp           # Test application
-src/benchmark.cpp      # Performance comparison
+src/demo.cpp           # Test application with OpenCV comparison
+src/clahe_harness.cpp  # Benchmarking harness (15-30 sec runtime)
 legacy/               # Original code for reference
+test_input.png        # Test image (xray)
 ```
 
 ## Usage Examples
@@ -84,13 +94,33 @@ clahe::ModernCLAHE processor(config);
 cv::Mat result = processor.process(input);
 ```
 
-## Next Steps for Multithreading
+## Benchmarking Harness
 
-Functions ready for parallel implementation:
+For reliable performance testing with scalable runtimes:
 
-- `compute_histograms()` - Each grid region processes independently
-- `clip_histograms()` - Each histogram can be clipped independently  
-- `interpolate_image()` - Each subregion interpolated independently
+```bash
+# Quick verification (2-3 seconds)
+./build/bin/clahe_harness --iterations 10 --image-size 1024x1024
+
+# Standard benchmarks
+./build/bin/clahe_harness --iterations 266    # ~15 seconds
+./build/bin/clahe_harness --iterations 533    # ~30 seconds
+
+# Test different configurations
+./build/bin/clahe_harness --grid-size 32x32 --iterations 150
+./build/bin/clahe_harness --image-size 8192x8192 --iterations 50
+
+# Use custom images
+./build/bin/clahe_harness --input test_input.png --iterations 100
+```
+
+**Key Features:**
+- Generates synthetic test images automatically
+- Progress indicators for long runs
+- Automatic runtime scaling estimates
+- Memory usage reporting
+- Works with any input image size
+
 
 These functions are the bottlenecks that need parallelization.
 

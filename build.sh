@@ -1,6 +1,14 @@
 #!/bin/bash
 
-# Modern CLAHE Build Script with OpenCV 4.x Support
+# Modern CLAHE Build Script     echo "Executables created:"
+    echo "  - bin/clahe_demo: Test application with comparison features"
+    echo "  - bin/clahe_harness: Benchmarking harness (15-30 sec runtime)"
+    echo ""
+    echo "To test CLAHE:"
+    echo "  ./build/bin/clahe_demo test_input.png output.png --metrics"
+    echo ""
+    echo "To benchmark (15-30 seconds):"
+    echo "  ./build/bin/clahe_harness --iterations 266"CV 4.x Support
 echo "=== Building Modern CLAHE Project ==="
 
 # Check if OpenCV is installed

@@ -23,6 +23,7 @@ sudo apt install cmake libopencv-dev  # Ubuntu
 ### 3. Test It Works
 ```bash
 ./build/bin/clahe_demo test_input.png output.png --metrics
+./build/bin/clahe_harness --iterations 10 --image-size 1024x1024
 ```
 
 ## What Changed From Original Code
