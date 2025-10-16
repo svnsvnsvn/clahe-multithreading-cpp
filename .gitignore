@@ -26,9 +26,12 @@ clahe_benchmark
 # Output images (keep test inputs, ignore outputs)
 output*.png
 output*.jpg
-*_clahe.*
-*_opencv.*
-*_modern.*
+*_clahe.png
+*_clahe.jpg
+*_opencv.png
+*_opencv.jpg
+*_modern.png
+*_modern.jpg
 result*.png
 result*.jpg
 
