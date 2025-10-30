@@ -73,6 +73,10 @@ private:
     mutable std::vector<std::vector<unsigned long>> histograms_;
     mutable std::vector<unsigned char> lut_;
     
+    // Image dimensions for region size calculations
+    mutable int image_width_;
+    mutable int image_height_;
+    
     // Core algorithm functions - optimized versions of legacy code
     void compute_histograms(const cv::Mat& image);
     void clip_histograms();
