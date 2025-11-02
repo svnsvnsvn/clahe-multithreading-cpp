@@ -30,12 +30,19 @@ add_executable(clahe_demo
 
 target_link_libraries(clahe_demo clahe_modern ${OpenCV_LIBS})
 
-# Create focused benchmarking harness
+# Create harness for performance testing
 add_executable(clahe_harness
     src/clahe_harness.cpp
 )
 
 target_link_libraries(clahe_harness clahe_modern ${OpenCV_LIBS})
+
+# Create comprehensive benchmark tool for report data
+add_executable(clahe_benchmark
+    src/benchmark.cpp
+)
+
+target_link_libraries(clahe_benchmark clahe_modern ${OpenCV_LIBS})
 
 # Set output directories
 set_target_properties(clahe_demo PROPERTIES
@@ -43,5 +50,9 @@ set_target_properties(clahe_demo PROPERTIES
 )
 
 set_target_properties(clahe_harness PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+
+set_target_properties(clahe_benchmark PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )

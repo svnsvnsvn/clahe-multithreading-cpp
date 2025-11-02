@@ -7,6 +7,9 @@ bin/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
+submission/
+input/
+output/
 
 # Compiled files
 *.o
@@ -58,3 +61,4 @@ Desktop.ini
 CS441-multithreading-programming-group-project.pdf
 ProjectReport_ABC.pdf
 WORK_DIVISION.md
+MULTITHREADING_IMPLEMENTATION.md

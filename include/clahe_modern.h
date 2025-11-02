@@ -39,6 +39,7 @@ struct CLAHEConfig {
     double clip_limit = 2.0;         // Contrast limit (>= 0.0, negative for AHE)
     bool use_full_range = true;      // Use full pixel range vs input range
     bool collect_metrics = false;    // Collect performance metrics
+    bool use_threading = true;       // Use 4-threaded implementation vs single-threaded
     
     // Validation
     bool is_valid() const;
@@ -78,7 +79,7 @@ private:
     mutable int image_height_;
     
     // Core algorithm functions - optimized versions of legacy code
-    void compute_histograms(const cv::Mat& image);
+    void compute_histograms(const cv::Mat& image, unsigned char min_val, unsigned char max_val);
     void clip_histograms();
     void compute_mappings(unsigned char min_val, unsigned char max_val);
     void interpolate_image(cv::Mat& image) const;

@@ -121,7 +121,7 @@ void ModernCLAHE::process_inplace(cv::Mat& image) {
     }
     
     // Core CLAHE algorithm steps
-    compute_histograms(working_image);
+    compute_histograms(working_image, min_val, max_val);
     clip_histograms();
     compute_mappings(min_val, max_val);
     interpolate_image(working_image);
@@ -178,24 +178,38 @@ void ModernCLAHE::make_lut(unsigned char min_val, unsigned char max_val) {
     }
 }
 
-void ModernCLAHE::compute_histograms(const cv::Mat& image) {
+void ModernCLAHE::compute_histograms(const cv::Mat& image, unsigned char min_val, unsigned char max_val) {
+    // Begin timing for this section
     auto start_time = std::chrono::high_resolution_clock::now();
     
-    make_lut(0, 255);
+    // Creates LUT, it helps determine pixel shade values faster
+    make_lut(min_val, max_val);
     
     // Store image dimensions for use in clip_histograms
     image_width_ = image.cols;
     image_height_ = image.rows;
     
+    // Calculating dimensions of tiles
     const int region_width = image.cols / config_.grid_width;
     const int region_height = image.rows / config_.grid_height;
     
-    // Single-threaded histogram computation
-    for (unsigned int gy = 0; gy < config_.grid_height; ++gy) {
-        for (unsigned int gx = 0; gx < config_.grid_width; ++gx) {
+    // Number of desired threads
+    const int THREAD_COUNT = 4;
+    // Determine the total amount of tiles needed
+    const size_t tile_total = config_.grid_width * config_.grid_height;
+    
+    // FIXED: Handle remainder properly for even work distribution
+    const size_t tiles_per_thread = tile_total / THREAD_COUNT;
+    const size_t remainder = tile_total % THREAD_COUNT;
+    
+    // Threads individually computing tiles
+    auto histogram_For_Range = [this, &image, region_width, region_height](size_t starting_Tile, size_t end_Tile) {
+        for (size_t t = starting_Tile; t < end_Tile; ++t) {
+            unsigned int gx = t % config_.grid_width;
+            unsigned int gy = t / config_.grid_width;
             size_t hist_idx = gy * config_.grid_width + gx;
             
-            // Clear histogram  
+            // Clear histogram
             std::fill(histograms_[hist_idx].begin(), histograms_[hist_idx].end(), 0);
             
             // Compute histogram for this region
@@ -203,6 +217,7 @@ void ModernCLAHE::compute_histograms(const cv::Mat& image) {
             int start_y = gy * region_height;
             
             for (int y = start_y; y < start_y + region_height; ++y) {
+                // This line below is how the function accesses the actual pixel data from the image
                 const unsigned char* row = image.ptr<unsigned char>(y);
                 for (int x = start_x; x < start_x + region_width; ++x) {
                     unsigned char bin = lut_[row[x]];
@@ -210,8 +225,26 @@ void ModernCLAHE::compute_histograms(const cv::Mat& image) {
                 }
             }
         }
+    };
+    
+    // FIXED: Create threads with balanced work distribution (handles remainder)
+    std::vector<std::thread> threads;
+    size_t current_start = 0;
+    
+    for (int t = 0; t < THREAD_COUNT; ++t) {
+        size_t work_size = tiles_per_thread + (t < static_cast<int>(remainder) ? 1 : 0);
+        size_t end_tile = current_start + work_size;
+        
+        threads.emplace_back(histogram_For_Range, current_start, end_tile);
+        current_start = end_tile;
     }
     
+    // Synchronization Barrier (Waiting for all threads to finish)
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    
+    // Recording timing
     if (config_.collect_metrics) {
         auto end_time = std::chrono::high_resolution_clock::now();
         metrics_.histogram_time = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -232,7 +265,7 @@ void ModernCLAHE::clip_histograms() {
         return;
     }
     
-    // FIXED: Calculate clip limit based on actual image region size
+    // Calculate clip limit based on actual image region size
     const int region_width = image_width_ / config_.grid_width;
     const int region_height = image_height_ / config_.grid_height; 
     const unsigned long pixels_per_region = region_width * region_height;
@@ -240,19 +273,66 @@ void ModernCLAHE::clip_histograms() {
         config_.clip_limit * pixels_per_region / config_.bins);
     const unsigned long actual_clip_limit = std::max(1UL, clip_limit);
     
-    const size_t num_histograms = histograms_.size();
-    const size_t NUM_THREADS = 4;
-    
-    // Calculate work distribution for 4 threads
-    const size_t histograms_per_thread = num_histograms / NUM_THREADS;
-    const size_t remainder = num_histograms % NUM_THREADS;
-    
-    // Function to clip histograms in a given range
-    auto clip_range = [this, actual_clip_limit](size_t start_idx, size_t end_idx) {
-        for (size_t i = start_idx; i < end_idx && i < histograms_.size(); ++i) {
-            auto& histogram = histograms_[i];
+    if (config_.use_threading) {
+        // Multi-threaded implementation
+        const size_t num_histograms = histograms_.size();
+        const size_t NUM_THREADS = 4;
+        
+        const size_t histograms_per_thread = num_histograms / NUM_THREADS;
+        const size_t remainder = num_histograms % NUM_THREADS;
+        
+        auto clip_range = [this, actual_clip_limit](size_t start_idx, size_t end_idx) {
+            for (size_t i = start_idx; i < end_idx && i < histograms_.size(); ++i) {
+                auto& histogram = histograms_[i];
+                
+                unsigned long excess = 0;
+                for (unsigned long& bin : histogram) {
+                    if (bin > actual_clip_limit) {
+                        excess += bin - actual_clip_limit;
+                        bin = actual_clip_limit;
+                    }
+                }
+                
+                if (excess > 0) {
+                    const unsigned long redistribution_per_bin = excess / config_.bins;
+                    const unsigned long remainder_pixels = excess % config_.bins;
+                    
+                    for (size_t j = 0; j < histogram.size(); ++j) {
+                        histogram[j] += redistribution_per_bin;
+                    }
+                    
+                    unsigned long remaining_to_distribute = remainder_pixels;
+                    for (size_t j = 0; j < histogram.size() && remaining_to_distribute > 0; ++j) {
+                        if (histogram[j] < actual_clip_limit) {
+                            ++histogram[j];
+                            --remaining_to_distribute;
+                        }
+                    }
+                    
+                    for (unsigned long& bin : histogram) {
+                        bin = std::min(bin, actual_clip_limit);
+                    }
+                }
+            }
+        };
+        
+        std::vector<std::thread> threads;
+        size_t current_start = 0;
+        
+        for (size_t t = 0; t < NUM_THREADS; ++t) {
+            size_t work_size = histograms_per_thread + (t < remainder ? 1 : 0);
+            size_t end_idx = current_start + work_size;
             
-            // Calculate excess pixels that exceed the clip limit
+            threads.emplace_back(clip_range, current_start, end_idx);
+            current_start = end_idx;
+        }
+        
+        for (auto& thread : threads) {
+            thread.join();
+        }
+    } else {
+        // Single-threaded baseline implementation
+        for (auto& histogram : histograms_) {
             unsigned long excess = 0;
             for (unsigned long& bin : histogram) {
                 if (bin > actual_clip_limit) {
@@ -261,49 +341,17 @@ void ModernCLAHE::clip_histograms() {
                 }
             }
             
-            // FIXED: Improved redistribution logic to handle clip limit properly
-            if (excess > 0) {
-                // First attempt: distribute evenly
-                const unsigned long redistribution_per_bin = excess / config_.bins;
-                const unsigned long remainder_pixels = excess % config_.bins;
-                
-                // Apply base redistribution
-                for (size_t j = 0; j < histogram.size(); ++j) {
-                    histogram[j] += redistribution_per_bin;
+            unsigned long redistribution_per_bin = excess / config_.bins;
+            unsigned long remainder = excess % config_.bins;
+            
+            for (size_t j = 0; j < histogram.size(); ++j) {
+                histogram[j] += redistribution_per_bin;
+                if (j < remainder) {
+                    ++histogram[j];
                 }
-                
-                // Distribute remainder pixels to first few bins that won't exceed limit
-                unsigned long remaining_to_distribute = remainder_pixels;
-                for (size_t j = 0; j < histogram.size() && remaining_to_distribute > 0; ++j) {
-                    if (histogram[j] < actual_clip_limit) {
-                        ++histogram[j];
-                        --remaining_to_distribute;
-                    }
-                }
-                
-                // Final clipping pass to ensure no bin exceeds limit
-                for (unsigned long& bin : histogram) {
-                    bin = std::min(bin, actual_clip_limit);
-                }
+                histogram[j] = std::min(histogram[j], actual_clip_limit);
             }
         }
-    };
-    
-    // Create threads with balanced work distribution
-    std::vector<std::thread> threads;
-    size_t current_start = 0;
-    
-    for (size_t t = 0; t < NUM_THREADS; ++t) {
-        size_t work_size = histograms_per_thread + (t < remainder ? 1 : 0);
-        size_t end_idx = current_start + work_size;
-        
-        threads.emplace_back(clip_range, current_start, end_idx);
-        current_start = end_idx;
-    }
-    
-    // Wait for all threads to complete
-    for (auto& thread : threads) {
-        thread.join();
     }
     
     if (config_.collect_metrics) {
@@ -316,8 +364,8 @@ void ModernCLAHE::clip_histograms() {
 void ModernCLAHE::compute_mappings(unsigned char min_val, unsigned char max_val) {
     auto start_time = std::chrono::high_resolution_clock::now();
     
-    const int region_width = static_cast<int>(std::ceil(static_cast<double>(config_.grid_width)));
-    const int region_height = static_cast<int>(std::ceil(static_cast<double>(config_.grid_height)));
+    const int region_width = image_width_ / config_.grid_width;
+    const int region_height = image_height_ / config_.grid_height;
     const unsigned long pixels_per_region = region_width * region_height;
     const double scale = static_cast<double>(max_val - min_val) / pixels_per_region;
     
@@ -345,10 +393,45 @@ void ModernCLAHE::interpolate_image(cv::Mat& image) const {
     const int region_width = image.cols / config_.grid_width;
     const int region_height = image.rows / config_.grid_height;
     
-    // Single-threaded interpolation processing
-    for (int gy = 0; gy <= static_cast<int>(config_.grid_height); ++gy) {
-        for (int gx = 0; gx <= static_cast<int>(config_.grid_width); ++gx) {
-            interpolate_region(image, gx, gy, region_width, region_height, gx, gy);
+    if (config_.use_threading) {
+        // Multi-threaded implementation
+        const int NUM_THREADS = 4;
+        const int total_rows = (config_.grid_height + 1);
+        const int rows_per_thread = total_rows / NUM_THREADS;
+        const int remainder_rows = total_rows % NUM_THREADS;
+        
+        auto process_row_range = [this, &image, region_width, region_height](int start_row, int end_row) {
+            for (int gy = start_row; gy < end_row; ++gy) {
+                for (int gx = 0; gx <= static_cast<int>(config_.grid_width); ++gx) {
+                    interpolate_region(image, gx, gy, region_width, region_height, gx, gy);
+                }
+            }
+        };
+        
+        std::vector<std::thread> threads;
+        int current_start = 0;
+        
+        for (int t = 0; t < NUM_THREADS; ++t) {
+            int work_size = rows_per_thread + (t < remainder_rows ? 1 : 0);
+            int end_row = current_start + work_size;
+            
+            end_row = std::min(end_row, total_rows);
+            
+            if (current_start < end_row) {
+                threads.emplace_back(process_row_range, current_start, end_row);
+            }
+            current_start = end_row;
+        }
+        
+        for (auto& thread : threads) {
+            thread.join();
+        }
+    } else {
+        // Single-threaded baseline implementation
+        for (int gy = 0; gy <= static_cast<int>(config_.grid_height); ++gy) {
+            for (int gx = 0; gx <= static_cast<int>(config_.grid_width); ++gx) {
+                interpolate_region(image, gx, gy, region_width, region_height, gx, gy);
+            }
         }
     }
     

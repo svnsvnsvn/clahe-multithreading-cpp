@@ -1,6 +1,35 @@
 #include "clahe_modern.h"
 #include <iostream>
 #include <string>
+#include <sys/stat.h>
+
+// Helper function to create directory if it doesn't exist
+void create_directory(const std::string& path) {
+    struct stat info;
+    if (stat(path.c_str(), &info) != 0) {
+        // Directory doesn't exist, create it
+        #ifdef _WIN32
+            _mkdir(path.c_str());
+        #else
+            mkdir(path.c_str(), 0755);
+        #endif
+    }
+}
+
+// Helper function to extract filename without extension
+std::string get_base_filename(const std::string& path) {
+    size_t last_slash = path.find_last_of("/\\");
+    size_t last_dot = path.find_last_of('.');
+    
+    std::string filename = (last_slash != std::string::npos) ? 
+                          path.substr(last_slash + 1) : path;
+    
+    if (last_dot != std::string::npos && last_dot > last_slash) {
+        filename = filename.substr(0, last_dot - (last_slash != std::string::npos ? last_slash + 1 : 0));
+    }
+    
+    return filename;
+}
 
 void print_usage(const char* program_name) {
     std::cout << "Usage: " << program_name << " <input_image> [output_image] [options]\n"
@@ -23,7 +52,14 @@ int main(int argc, char* argv[]) {
     
     // Parse command line arguments
     std::string input_path = argv[1];
-    std::string output_path = (argc > 2 && argv[2][0] != '-') ? argv[2] : "output.jpg";
+    
+    // Create output directory
+    create_directory("output");
+    
+    // Generate default output path if not specified
+    std::string base_filename = get_base_filename(input_path);
+    std::string default_output = "output/" + base_filename + "_clahe_output.png";
+    std::string output_path = (argc > 2 && argv[2][0] != '-') ? argv[2] : default_output;
     
     clahe::CLAHEConfig config;
     config.collect_metrics = false;
@@ -83,15 +119,9 @@ int main(int argc, char* argv[]) {
             auto comparison = clahe::comparison::compare_implementations(src, config);
             comparison.print_summary();
             
-            // Save both results
-            size_t dot_pos = output_path.find_last_of('.');
-            std::string base_name = (dot_pos != std::string::npos) ? 
-                output_path.substr(0, dot_pos) : output_path;
-            std::string extension = (dot_pos != std::string::npos) ? 
-                output_path.substr(dot_pos) : ".jpg";
-            
-            std::string modern_path = base_name + "_modern" + extension;
-            std::string opencv_path = base_name + "_opencv" + extension;
+            // Save both results to output directory with descriptive names
+            std::string modern_path = "output/" + base_filename + "_modern.png";
+            std::string opencv_path = "output/" + base_filename + "_opencv.png";
             
             cv::imwrite(modern_path, comparison.modern_result);
             cv::imwrite(opencv_path, comparison.opencv_result);
